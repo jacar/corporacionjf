@@ -16,6 +16,7 @@ interface ReportPreviewProps {
   mode?: 'pdf' | 'screenshot' | 'preview';
   defaultConductorId?: string;
   defaultDateISO?: string;
+  isSingleConductorReport?: boolean;
 }
 
 const ReportPreview: React.FC<ReportPreviewProps> = ({ 
@@ -26,10 +27,14 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
   onClose,
   mode = 'pdf',
   defaultConductorId,
-  defaultDateISO
+  defaultDateISO,
+  isSingleConductorReport = false
 }) => {
+  console.log("ReportPreview props:", { trips: trips.length, passengers: passengers.length, conductors: conductors.length, dateRange, mode, defaultConductorId, defaultDateISO });
+  console.log("ReportPreview props:", { trips: trips.length, passengers: passengers.length, conductors: conductors.length, dateRange, mode, defaultConductorId, defaultDateISO });
   const [signatures, setSignatures] = useState<Signature[]>([]);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
   const [reportData, setReportData] = useState({
@@ -39,7 +44,8 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
     mes: '',
     año: '',
     hora: '',
-    ampm: { am: false, pm: false }
+    ampm: { am: false, pm: false },
+    passengerRows: []
   });
 
   useEffect(() => {
@@ -79,6 +85,7 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
         ampm: { am: now.getHours() < 12, pm: now.getHours() >= 12 }
       });
     }
+    console.log("ReportPreview: reportData calculated:", reportData);
   }, [trips, conductors, defaultConductorId, defaultDateISO]);
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -92,12 +99,34 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
     }
   };
 
+  const shareViaWhatsApp = async () => {
+    setIsSharing(true);
+    try {
+      const pdfBlob = await downloadPDFStructured(true); // Generate PDF as blob
+      if (pdfBlob && navigator.share) {
+        const pdfFile = new File([pdfBlob], `reporte-viaje.pdf`, { type: 'application/pdf' });
+        await navigator.share({
+          files: [pdfFile],
+          title: 'Reporte de Viaje',
+          text: `Reporte de viaje para ${reportData.conductor}`,
+        });
+      } else {
+        alert('La función de compartir no está disponible en este navegador o el PDF no pudo ser generado.');
+      }
+    } catch (error) {
+      console.error("Error al compartir por WhatsApp:", error);
+      alert('Hubo un error al intentar compartir el reporte.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   const downloadPDFFromHTML = async () => {
     // Deprecated in favor of programmatic PDF to avoid blank renders
     return downloadPDFStructured();
   };
     
-  const downloadPDFStructured = async () => {
+  const downloadPDFStructured = async (returnAsBlob = false) => {
     setIsGeneratingPDF(true);
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
@@ -223,6 +252,22 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
       };
       // First page header with meta
       drawHeader(true);
+
+      // Add route to the PDF, with text wrapping
+      if (trips.length > 0 && trips[0].ruta) {
+        const trip = trips[0];
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        const routeText = `Ruta: ${trip.ruta}`;
+        const availableWidth = pageWidth - margin * 2 - 4;
+        const splitText = doc.splitTextToSize(routeText, availableWidth);
+        
+        y += 2; // Lower the text a bit
+        doc.text(splitText, margin + 2, y);
+        const textHeight = splitText.length * 4; // 4mm per line
+        y += textHeight;
+        y += 4; // Margin after text
+      }
 
 
       // Table header (match image columns, total 190mm)
@@ -364,11 +409,24 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
       doc.text(`CI: ${corporacion?.ci || '7.894.569'}`, rightX + 2, y + 18);
       doc.text(`Cargo: ${corporacion?.cargo || 'ANALISTA DE TRANSPORTE'}`, rightX + 2, y + 24);
 
-      const fileName = `Reporte_Viajes_Diarios_${format(new Date(), 'ddMMyyyy_HHmm')}.pdf`;
-      doc.save(fileName);
-    } catch (e) {
-      console.error(e);
-      alert('No se pudo generar el PDF.');
+      const pdfBlob = doc.output('blob');
+
+      if (returnAsBlob) {
+        return pdfBlob;
+      }
+
+      const downloadUrl = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      const fileName = `reporte_${reportData.conductor}_${reportData.dia}-${reportData.mes}-${reportData.año}.pdf`;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error("Error al generar el PDF:", error);
+      alert('Hubo un error al generar el PDF.');
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -500,6 +558,7 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
         nombre: passenger?.name || trip.passengerName || '',
         cedula: passenger?.cedula || trip.passengerCedula || '',
         gerencia: passenger?.gerencia || '',
+        ruta: trip.ruta || '',
         horaSalida: format(new Date(trip.startTime), 'HH:mm', { locale: es }),
         horaLlegada: trip.endTime ? format(new Date(trip.endTime), 'HH:mm', { locale: es }) : ''
       };
@@ -717,6 +776,19 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
                       />
                     </td>
                   </tr>
+                  {trips.length > 0 && trips[0].ruta && (
+                    <tr>
+                      <th>Ruta</th>
+                      <td colSpan={3}>
+                        <input
+                          type="text"
+                          className="reporte-input"
+                          value={trips[0].ruta}
+                          readOnly
+                        />
+                      </td>
+                    </tr>
+                  )}
                   <tr>
                     <th>Día</th>
                     <td>
@@ -787,56 +859,26 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
                 </tbody>
               </table>
 
-              <table className="reporte-table">
+              <table className="reporte-table-alt">
                 <thead>
                   <tr>
-                    <th style={{width:'5%'}}>N°</th>
-                    <th style={{width:'30%'}}>Nombre y Apellido</th>
-                    <th style={{width:'15%'}}>Nro de Cédula</th>
-                    <th style={{width:'20%'}}>Gerencia</th>
-                    <th style={{width:'15%'}}>Hora Salida</th>
-                    <th style={{width:'15%'}}>Hora Llegada</th>
+                    <th style={{width: '25%'}}>Pasajero</th>
+                    <th style={{width: '15%'}}>Cédula</th>
+                    <th style={{width: '20%'}}>Gerencia</th>
+                    <th style={{width: '20%'}}>Ruta</th>
+                    <th style={{width: '10%'}}>H. Salida</th>
+                    <th style={{width: '10%'}}>H. Llegada</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {passengerRows.map((row, index) => (
+                  {passengerRows && passengerRows.map((row, index) => (
                     <tr key={index}>
-                      <td style={{textAlign:'center'}}>{index + 1}</td>
-                      <td>
-                        <input 
-                          type="text" 
-                          className="reporte-input"
-                          defaultValue={row.nombre}
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="text" 
-                          className="reporte-input"
-                          defaultValue={row.cedula}
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="text" 
-                          className="reporte-input"
-                          defaultValue={row.gerencia}
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="text" 
-                          className="reporte-input"
-                          defaultValue={row.horaSalida}
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="text" 
-                          className="reporte-input"
-                          defaultValue={row.horaLlegada}
-                        />
-                      </td>
+                      <td><input type="text" className="reporte-input" value={row.name} onChange={(e) => handlePassengerRowChange(index, 'name', e.target.value)} /></td>
+                      <td><input type="text" className="reporte-input" value={row.cedula} onChange={(e) => handlePassengerRowChange(index, 'cedula', e.target.value)} /></td>
+                      <td><input type="text" className="reporte-input" value={row.gerencia} onChange={(e) => handlePassengerRowChange(index, 'gerencia', e.target.value)} /></td>
+                      <td><input type="text" className="reporte-input" value={row.ruta} onChange={(e) => handlePassengerRowChange(index, 'ruta', e.target.value)} /></td>
+                      <td><input type="text" className="reporte-input" value={row.horaSalida} onChange={(e) => handlePassengerRowChange(index, 'horaSalida', e.target.value)} /></td>
+                      <td><input type="text" className="reporte-input" value={row.horaLlegada} onChange={(e) => handlePassengerRowChange(index, 'horaLlegada', e.target.value)} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -880,16 +922,27 @@ const ReportPreview: React.FC<ReportPreviewProps> = ({
               
               {mode === 'preview' && (
                 <>
+                  {isSingleConductorReport ? (
+                    <button
+                      onClick={shareViaWhatsApp}
+                      disabled={isSharing}
+                      className="flex items-center justify-center space-x-2 bg-gradient-to-r from-green-500 to-green-600 text-white px-4 sm:px-6 py-2 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                    >
+                      <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
+                      <span className="text-sm sm:text-base">{isSharing ? 'Compartiendo...' : 'Compartir por WhatsApp'}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={captureScreenshot}
+                      disabled={isCapturingScreenshot}
+                      className="flex items-center justify-center space-x-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 sm:px-6 py-2 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                    >
+                      <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
+                      <span className="text-sm sm:text-base">{isCapturingScreenshot ? 'Capturando...' : 'Capturar Pantalla'}</span>
+                    </button>
+                  )}
                   <button
-                    onClick={captureScreenshot}
-                    disabled={isCapturingScreenshot}
-                    className="flex items-center justify-center space-x-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 sm:px-6 py-2 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-                  >
-                    <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
-                    <span className="text-sm sm:text-base">{isCapturingScreenshot ? 'Capturando...' : 'Capturar Pantalla'}</span>
-                  </button>
-                  <button
-                    onClick={downloadPDFFromHTML}
+                    onClick={() => downloadPDFStructured(false)}
                     disabled={isGeneratingPDF}
                     className="flex items-center justify-center space-x-2 bg-gradient-to-r from-red-600 to-red-700 text-white px-4 sm:px-6 py-2 rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
                   >

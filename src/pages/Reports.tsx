@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileText, Download, Filter, Calendar, FileSignature, Eye } from 'lucide-react';
 import { applySEO } from '../utils/seo';
-import { format, startOfDay, endOfDay, startOfMonth, endOfMonth, subDays, startOfWeek, endOfWeek, subWeeks } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subDays, addDays, startOfDay, endOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { storage } from '../utils/storage';
-import { generateOfficialPDFReport, generateOfficialReport, generateDetailedExcelReport } from '../utils/reports';
+import { generateOfficialPDFReport, generateCustomExcelReport, generateDetailedExcelReport } from '../utils/reports';
 import { Trip, Passenger, Conductor } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import ReportPreview from '../components/Reports/ReportPreview';
@@ -20,27 +20,34 @@ const Reports: React.FC = () => {
   const [customEndDate, setCustomEndDate] = useState('');
   const [selectedConductor, setSelectedConductor] = useState('all');
   const [showPreview, setShowPreview] = useState(false);
+  const [showSingleTripReportPreview, setShowSingleTripReportPreview] = useState(false);
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
 
   useEffect(() => {
     applySEO({
       title: 'Reportes | Sistema de Reportes JF',
-      description: 'Genere y descargue reportes oficiales en PDF y Excel. Filtros por período y conductor.',
-      keywords: 'reportes, PDF, Excel, transporte, firmas, filtros',
+      description: 'Genere y visualice reportes detallados de viajes, pasajeros y conductores.',
+      keywords: 'reportes, viajes, pasajeros, conductores, transporte, gestión',
       canonicalPath: '/reports',
     });
-    loadData();
-  }, []);
+    if (user) {
+      loadData();
+    }
+  }, [dateRange, customStartDate, customEndDate, user]);
 
   useEffect(() => {
     filterTrips();
   }, [trips, dateRange, customStartDate, customEndDate, selectedConductor]);
 
   const loadData = () => {
+    console.log('loadData called');
     const allTrips = storage.getTrips();
+    console.log('All trips from storage:', allTrips);
     
     // Si es conductor, solo mostrar sus propios viajes
     if (user?.role === 'conductor') {
       const conductorTrips = allTrips.filter(trip => trip.conductorId === user.id);
+      console.log('Conductor trips:', conductorTrips);
       setTrips(conductorTrips);
     } else {
       // Admin y root ven todos los viajes
@@ -52,6 +59,11 @@ const Reports: React.FC = () => {
   };
 
   const filterTrips = () => {
+    console.log('filterTrips called');
+    console.log('Current trips state:', trips);
+    console.log('Current dateRange:', dateRange);
+    console.log('Current customStartDate:', customStartDate);
+    console.log('Current customEndDate:', customEndDate);
     const now = new Date();
     let startDate: Date;
     let endDate: Date;
@@ -63,7 +75,7 @@ const Reports: React.FC = () => {
         break;
       case 'biweekly':
         // Últimas 2 semanas
-        startDate = startOfDay(subWeeks(now, 2));
+        startDate = subDays(startOfWeek(now, { weekStartsOn: 1 }), 13); // Start of week 2 weeks ago
         endDate = endOfDay(now);
         break;
       case 'monthly':
@@ -71,13 +83,20 @@ const Reports: React.FC = () => {
         endDate = endOfMonth(now);
         break;
       case 'custom':
-        if (!customStartDate || !customEndDate) return;
+        if (!customStartDate || !customEndDate) {
+          console.log('Custom date range not set, returning.');
+          return;
+        }
         startDate = startOfDay(new Date(customStartDate));
         endDate = endOfDay(new Date(customEndDate));
         break;
       default:
+        console.log('Unknown date range:', dateRange);
         return;
     }
+
+    console.log('Calculated startDate:', startDate);
+    console.log('Calculated endDate:', endDate);
 
     const filtered = trips.filter(trip => {
       const tripDate = new Date(trip.startTime);
@@ -89,9 +108,11 @@ const Reports: React.FC = () => {
                            selectedConductor === 'all' || 
                            trip.conductorId === selectedConductor;
       
+      console.log(`Trip ${trip.id}: dateInRange=${dateInRange}, conductorMatch=${conductorMatch}`);
       return dateInRange && conductorMatch;
     });
 
+    console.log('Filtered trips:', filtered);
     setFilteredTrips(filtered);
   };
 
@@ -118,7 +139,7 @@ const Reports: React.FC = () => {
   };
 
   const downloadExcel = () => {
-    generateOfficialReport(filteredTrips, passengers, conductors, getDateRangeLabel());
+    generateCustomExcelReport(filteredTrips, passengers, conductors, getDateRangeLabel());
   };
 
   const downloadDetailedExcel = () => {
@@ -127,6 +148,11 @@ const Reports: React.FC = () => {
 
   const [showPreviewForPDF, setShowPreviewForPDF] = useState(false);
   const [showPreviewForScreenshot, setShowPreviewForScreenshot] = useState(false);
+
+  const handleViewTripReport = (trip: Trip) => {
+    setSelectedTrip(trip);
+    setShowSingleTripReportPreview(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -365,6 +391,9 @@ const Reports: React.FC = () => {
                 <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Estado
                 </th>
+                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -403,6 +432,14 @@ const Reports: React.FC = () => {
                       }`}>
                         {trip.status === 'finalizado' ? 'Finalizado' : 'En curso'}
                       </span>
+                    </td>
+                    <td className="px-2 sm:px-6 py-4 text-sm text-gray-900">
+                      <button
+                        onClick={() => handleViewTripReport(trip)}
+                        className="text-blue-600 hover:text-blue-900 font-medium"
+                      >
+                        Ver Reporte
+                      </button>
                     </td>
                   </tr>
                 );
@@ -449,6 +486,21 @@ const Reports: React.FC = () => {
           mode="pdf"
           defaultConductorId={selectedConductor !== 'all' ? selectedConductor : undefined}
           defaultDateISO={new Date().toISOString()}
+        />
+      )}
+
+      {/* Modal de Vista Previa para Reporte de un solo viaje */}
+      {showSingleTripReportPreview && selectedTrip && (
+        <ReportPreview
+          trips={[selectedTrip]}
+          passengers={passengers}
+          conductors={conductors}
+          dateRange={`Reporte de Viaje - ${format(new Date(selectedTrip.startTime), 'dd/MM/yyyy HH:mm', { locale: es })}`}
+          onClose={() => setShowSingleTripReportPreview(false)}
+          mode="preview"
+          defaultConductorId={selectedTrip.conductorId}
+          defaultDateISO={selectedTrip.startTime}
+          isSingleConductorReport={true}
         />
       )}
     </div>

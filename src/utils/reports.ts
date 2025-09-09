@@ -844,3 +844,91 @@ export const generateDetailedExcelReport = (
   
   XLSX.writeFile(wb, fileName);
 };
+
+export const sendReportToAdmin = async (reportData: any, reportType: 'pdf' | 'excel', adminEmail: string) => {
+  console.log(`Simulating sending ${reportType} report to admin: ${adminEmail}`);
+  console.log('Report Data:', reportData);
+  // In a real application, you would send this data to a backend API
+  // For example: 
+  // try {
+  //   const response = await fetch('/api/send-report', {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body: JSON.stringify({ reportData, reportType, adminEmail })
+  //   });
+  //   if (!response.ok) throw new Error('Failed to send report');
+  //   console.log('Report sent successfully!');
+  // } catch (error) {
+  //   console.error('Error sending report:', error);
+  // }
+  alert(`Reporte ${reportType.toUpperCase()} enviado al administrador: ${adminEmail}`);
+};
+
+// Función para generar reporte en formato Excel personalizado
+export const generateCustomExcelReport = (
+  trips: Trip[],
+  passengers: Passenger[],
+  conductors: Conductor[],
+  dateRange: string
+) => {
+  const reportData: any[] = [];
+
+  // Título del reporte
+  reportData.push(['CONTROL DE TRANSPORTE DE PERSONAL']);
+  reportData.push([]); // Fila vacía
+
+  // Encabezados de la tabla
+  reportData.push([
+    'CONDUCTOR',
+    'UNIDAD',
+    'RUTA ASIGNADA',
+    'PASAJERO',
+    'C.I. PASAJERO',
+    'GERENCIA/ÁREA',
+    'HORA SALIDA',
+    'HORA LLEGADA'
+  ]);
+
+  // Datos de los viajes
+  trips.forEach(trip => {
+    const passenger = passengers.find(p => p.id === trip.passengerId);
+    const conductor = conductors.find(c => c.id === trip.conductorId);
+
+    reportData.push([
+      conductor?.name || trip.conductorName,
+      conductor?.placa || '', // UNIDAD es la placa
+      trip.ruta,
+      passenger?.name || trip.passengerName,
+      passenger?.cedula || trip.passengerCedula,
+      passenger?.gerencia || '',
+      format(new Date(trip.startTime), 'HH:mm', { locale: es }),
+      trip.endTime ? format(new Date(trip.endTime), 'HH:mm', { locale: es }) : 'EN CURSO'
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(reportData);
+
+  // Anchos de columna
+  const colWidths = [
+    { wch: 35 },  // CONDUCTOR
+    { wch: 15 },  // UNIDAD
+    { wch: 40 },  // RUTA ASIGNADA
+    { wch: 35 },  // PASAJERO
+    { wch: 18 },  // C.I. PASAJERO
+    { wch: 25 },  // GERENCIA/ÁREA
+    { wch: 12 },  // HORA SALIDA
+    { wch: 12 }   // HORA LLEGADA
+  ];
+  ws['!cols'] = colWidths;
+
+  // Unir celdas para el título
+  if (!ws['!merges']) ws['!merges'] = [];
+  ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Control Transporte');
+
+  const fileName = `Control_Transporte_${dateRange.replace(/\s/g, '_').replace(/[()]/g, '')}_${format(new Date(), 'ddMMyyyy_HHmm')}.xlsx`;
+
+  XLSX.writeFile(wb, fileName);
+};

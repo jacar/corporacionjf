@@ -172,6 +172,30 @@ const ScanQR: React.FC = () => {
     }
   };
 
+  const finalizarRuta = (ruta: string) => {
+    if (window.confirm(`¿Está seguro de finalizar todos los viajes de la ruta "${ruta}"?`)) {
+      const tripsToFinalize = activeTrips.filter(trip => trip.ruta === ruta);
+      const trips = storage.getTrips();
+      const updatedTrips = trips.map(trip => {
+        if (tripsToFinalize.some(t => t.id === trip.id)) {
+          return { ...trip, status: 'finalizado' as const, endTime: new Date().toISOString() };
+        }
+        return trip;
+      });
+      storage.saveTrips(updatedTrips);
+      loadData();
+    }
+  };
+
+  const tripsByRoute = activeTrips.reduce((acc, trip) => {
+    const routeKey = trip.ruta || 'Ruta no especificada';
+    if (!acc[routeKey]) {
+      acc[routeKey] = [];
+    }
+    acc[routeKey].push(trip);
+    return acc;
+  }, {} as Record<string, Trip[]>);
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -267,78 +291,89 @@ const ScanQR: React.FC = () => {
       </div>
 
       {/* Viajes activos */}
-      <div className="bg-white rounded-lg shadow-md">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Viajes Activos ({activeTrips.length})
-          </h2>
-        </div>
-        
-        <div>
-          <table className="w-full table-fixed md:table-auto">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Pasajero
-                </th>
-                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Cédula
-                </th>
-                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Hora Inicio
-                </th>
-                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Ruta
-                </th>
-                <th className="px-2 sm:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {activeTrips.map((trip) => {
-                const passenger = passengers.find(p => p.id === trip.passengerId);
-                
-                return (
-                  <tr key={trip.id} className="hover:bg-gray-50 align-top">
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap md:whitespace-normal">
-                      <div className="font-medium text-gray-900">
-                        {passenger?.name || trip.passengerName}
-                      </div>
-                    </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap md:whitespace-normal text-gray-600">
-                      {passenger?.cedula || trip.passengerCedula}
-                    </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap md:whitespace-normal text-gray-600">
-                      {new Date(trip.startTime).toLocaleTimeString()}
-                    </td>
-                    <td className="px-2 sm:px-6 py-4 text-gray-600 break-words">
-                      <div className="max-w-[140px] sm:max-w-xs md:max-w-none" title={trip.ruta}>
-                        {trip.ruta}
-                      </div>
-                    </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-center">
-                      <button
-                        onClick={() => manualFinalizarViaje(trip.id)}
-                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
-                      >
-                        Finalizar
-                      </button>
-                    </td>
+      <div className="space-y-6">
+        {Object.entries(tripsByRoute).map(([ruta, trips]) => (
+          <div key={ruta} className="bg-white rounded-lg shadow-md">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {ruta} ({trips.length} {trips.length === 1 ? 'pasajero' : 'pasajeros'})
+                </h2>
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowManualEntry(true)}
+                  className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <UserPlus className="h-5 w-5" />
+                  <span>Agregar Pasajeros</span>
+                </button>
+                <button
+                  onClick={() => finalizarRuta(ruta)}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Finalizar Ruta
+                </button>
+              </div>
+            </div>
+            
+            <div>
+              <table className="w-full table-fixed md:table-auto">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Pasajero
+                    </th>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Cédula
+                    </th>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Hora Inicio
+                    </th>
+                    <th className="px-2 sm:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Acciones
+                    </th>
                   </tr>
-                );
-              })}
-              
-              {activeTrips.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 sm:px-6 py-8 text-center text-gray-500">
-                    No hay viajes activos
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {trips.map((trip) => {
+                    const passenger = passengers.find(p => p.id === trip.passengerId);
+                    
+                    return (
+                      <tr key={trip.id} className="hover:bg-gray-50 align-top">
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap md:whitespace-normal">
+                          <div className="font-medium text-gray-900">
+                            {passenger?.name || trip.passengerName}
+                          </div>
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap md:whitespace-normal text-gray-600">
+                          {passenger?.cedula || trip.passengerCedula}
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap md:whitespace-normal text-gray-600">
+                          {new Date(trip.startTime).toLocaleTimeString()}
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-center">
+                          <button
+                            onClick={() => manualFinalizarViaje(trip.id)}
+                            className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+                          >
+                            Finalizar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+
+        {activeTrips.length === 0 && (
+          <div className="bg-white rounded-lg shadow-md p-6 text-center text-gray-500">
+            No hay viajes activos
+          </div>
+        )}
       </div>
 
       {/* Instrucciones */}
