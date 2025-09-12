@@ -8,7 +8,7 @@ import { generateQRCode, QRData } from './qr';
  * Procesa los datos de pasajeros importados desde un archivo CSV/Excel
  */
 export const processPassengersFromImport = async (data: any[]): Promise<Passenger[]> => {
-  const existingPassengers = storage.getPassengers();
+  const existingPassengers = await storage.getPassengers();
   const existingCedulas = new Set(existingPassengers.map(p => p.cedula));
   const newPassengers: Passenger[] = [];
   
@@ -67,7 +67,7 @@ export const processPassengersFromImport = async (data: any[]): Promise<Passenge
 export const saveImportedPassengers = async (newPassengers: Passenger[]): Promise<number> => {
   if (newPassengers.length === 0) return 0;
   
-  const existingPassengers = storage.getPassengers();
+  const existingPassengers = await storage.getPassengers();
   const updatedPassengers = [...existingPassengers, ...newPassengers];
   
   try {

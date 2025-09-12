@@ -3,7 +3,7 @@ import QrScanner from 'qr-scanner';
 import { Camera, X } from 'lucide-react';
 
 interface QRScannerProps {
-  onScan: (data: string) => void;
+  onScan: (data: string) => Promise<void> | void;
   onClose: () => void;
 }
 

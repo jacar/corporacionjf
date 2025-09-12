@@ -40,9 +40,14 @@ const Users: React.FC = () => {
     filterUsers();
   }, [users, searchTerm]);
 
-  const loadData = () => {
-    setUsers(storage.getUsers());
-    setCredentials(storage.getConductorCredentials());
+  const loadData = async () => {
+    try {
+      setUsers(storage.getUsers());
+      setCredentials(storage.getConductorCredentials());
+    } catch (error) {
+      console.error('Error al cargar datos de usuarios:', error);
+      alert('Hubo un problema al cargar los datos de usuarios. Intente nuevamente.');
+    }
   };
 
   const filterUsers = () => {

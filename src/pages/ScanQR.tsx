@@ -40,23 +40,28 @@ const ScanQR: React.FC = () => {
     return `transport_current_group_${conductorId}_${ruta || 'sin_ruta'}_${currentShift || 'sin_turno'}_${day}`;
   };
 
-  const loadData = () => {
-    const trips = storage.getTrips();
-    const passengersData = storage.getPassengers();
-    const conductorsData = storage.getConductors();
-    
-    setActiveTrips(trips.filter(t => t.status === 'en_curso'));
-    setPassengers(passengersData);
-    setConductors(conductorsData);
+  const loadData = async () => {
+    try {
+      const trips = storage.getTrips();
+      const passengersData = await storage.getPassengers();
+      const conductorsData = storage.getConductors();
+      
+      setActiveTrips(trips.filter(t => t.status === 'en_curso'));
+      setPassengers(passengersData);
+      setConductors(conductorsData);
 
-    // Cargar groupId actual si existe
-    const conductor = conductorsData.find(c => c.cedula === user?.cedula);
-    const key = buildGroupStorageKey(conductor?.id || user?.id || '', conductor?.ruta || '', shift);
-    const existingGroupId = localStorage.getItem(key);
-    setCurrentGroupId(existingGroupId || null);
+      // Cargar groupId actual si existe
+      const conductor = conductorsData.find(c => c.cedula === user?.cedula);
+      const key = buildGroupStorageKey(conductor?.id || user?.id || '', conductor?.ruta || '', shift);
+      const existingGroupId = localStorage.getItem(key);
+      setCurrentGroupId(existingGroupId || null);
+    } catch (error) {
+      console.error('Error al cargar datos:', error);
+      alert('Hubo un problema al cargar los datos. Intente nuevamente.');
+    }
   };
 
-  const handleQRScan = (qrData: string) => {
+  const handleQRScan = async (qrData: string) => {
     try {
       const parsedData = parseQRData(qrData);
       
@@ -74,14 +79,14 @@ const ScanQR: React.FC = () => {
       const existingTrip = activeTrips.find(t => t.passengerId === passenger.id);
       
       if (existingTrip) {
-        finalizarViaje(existingTrip.id);
+        await finalizarViaje(existingTrip.id);
         setScanResult({
           type: 'success',
           message: `Viaje finalizado para ${passenger.name}`,
           passenger
         });
       } else {
-        iniciarViaje(passenger);
+        await iniciarViaje(passenger);
         setScanResult({
           type: 'success',
           message: `Viaje iniciado para ${passenger.name}`,
@@ -101,7 +106,7 @@ const ScanQR: React.FC = () => {
     }
   };
 
-  const handleManualEntry = (e: React.FormEvent) => {
+  const handleManualEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!manualCedula.trim()) {
@@ -127,14 +132,14 @@ const ScanQR: React.FC = () => {
     const existingTrip = activeTrips.find(t => t.passengerId === passenger.id);
     
     if (existingTrip) {
-      finalizarViaje(existingTrip.id);
+      await finalizarViaje(existingTrip.id);
       setScanResult({
         type: 'success',
         message: `Viaje finalizado para ${passenger.name}`,
         passenger
       });
     } else {
-      iniciarViaje(passenger);
+      await iniciarViaje(passenger);
       setScanResult({
         type: 'success',
         message: `Viaje iniciado para ${passenger.name}`,
@@ -146,7 +151,7 @@ const ScanQR: React.FC = () => {
     setManualCedula('');
   };
 
-  const iniciarViaje = (passenger: Passenger) => {
+  const iniciarViaje = async (passenger: Passenger) => {
     const conductor = conductors.find(c => c.cedula === user?.cedula);
     if (!shift) {
       setScanResult({ type: 'error', message: 'Seleccione el turno (mañana o noche) antes de registrar.' });
@@ -190,10 +195,14 @@ const ScanQR: React.FC = () => {
     const updatedTrips = [...trips, newTrip];
     storage.saveTrips(updatedTrips);
     
-    loadData();
+    try {
+      await loadData();
+    } catch (error) {
+      console.error('Error al cargar datos después de iniciar viaje:', error);
+    }
   };
 
-  const finalizarViaje = (tripId: string) => {
+  const finalizarViaje = async (tripId: string) => {
     const trips = storage.getTrips();
     const updatedTrips = trips.map(trip => 
       trip.id === tripId 
@@ -202,16 +211,20 @@ const ScanQR: React.FC = () => {
     );
     
     storage.saveTrips(updatedTrips);
-    loadData();
-  };
-
-  const manualFinalizarViaje = (tripId: string) => {
-    if (window.confirm('¿Está seguro de finalizar este viaje?')) {
-      finalizarViaje(tripId);
+    try {
+      await loadData();
+    } catch (error) {
+      console.error('Error al cargar datos después de finalizar viaje:', error);
     }
   };
 
-  const finalizarRuta = (ruta: string) => {
+  const manualFinalizarViaje = async (tripId: string) => {
+    if (window.confirm('¿Está seguro de finalizar este viaje?')) {
+      await finalizarViaje(tripId);
+    }
+  };
+
+  const finalizarRuta = async (ruta: string) => {
     if (window.confirm(`¿Está seguro de finalizar todos los viajes de la ruta "${ruta}"?`)) {
       const tripsToFinalize = activeTrips.filter(trip => trip.ruta === ruta);
       const trips = storage.getTrips();
@@ -228,7 +241,11 @@ const ScanQR: React.FC = () => {
       const groupKey = buildGroupStorageKey(conductorId, ruta, shift);
       localStorage.removeItem(groupKey);
       setCurrentGroupId(null);
-      loadData();
+      try {
+        await loadData();
+      } catch (error) {
+        console.error('Error al cargar datos después de finalizar ruta:', error);
+      }
     }
   };
 
