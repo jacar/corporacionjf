@@ -206,6 +206,7 @@ const Passengers: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gestión de Pasajeros</h1>
           <p className="text-gray-600">Administre los pasajeros del sistema</p>
+          <p className="text-gray-600 mt-1">Total de pasajeros: <span className="font-semibold">{passengers.length}</span></p>
         </div>
         <div className="flex space-x-2">
           <button
@@ -249,6 +250,9 @@ const Passengers: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto md:overflow-visible">
+          <div className="px-6 py-2 text-sm text-gray-600">
+            Mostrando <span className="font-semibold">{filteredPassengers.length}</span> de <span className="font-semibold">{passengers.length}</span> pasajeros
+          </div>
           <table className="w-full table-auto md:table-fixed">
             <thead className="bg-gray-50 hidden md:table-header-group">
               <tr>
