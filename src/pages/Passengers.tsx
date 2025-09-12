@@ -53,7 +53,7 @@ const Passengers: React.FC = () => {
     } else {
       const filtered = passengers.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.cedula.includes(searchTerm) ||
+        (typeof p.cedula === 'string' ? p.cedula.includes(searchTerm) : String(p.cedula).includes(searchTerm)) ||
         p.gerencia.toLowerCase().includes(searchTerm.toLowerCase())
       );
       setFilteredPassengers(filtered);

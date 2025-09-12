@@ -29,6 +29,7 @@ const ConductorFlow: React.FC = () => {
   // Data
   const [conductors, setConductors] = useState<Conductor[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     applySEO({
@@ -40,16 +41,27 @@ const ConductorFlow: React.FC = () => {
     loadData();
   }, []);
 
-  const loadData = () => {
-    const allConductors = storage.getConductors();
-    setConductors(allConductors);
-    setPassengers(storage.getPassengers());
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const allConductors = storage.getConductors();
+      setConductors(allConductors);
+      
+      // Cargar pasajeros de forma asíncrona
+      const allPassengers = await storage.getPassengers();
+      setPassengers(allPassengers);
 
-    // Si el usuario es conductor, fijar su propio perfil y saltar selección
-    if (user?.role === 'conductor') {
-      const own = allConductors.find(c => c.id === user.id || c.cedula === user.cedula) || null;
-      setSelectedConductor(own);
-      setCurrentStep('identify');
+      // Si el usuario es conductor, fijar su propio perfil y saltar selección
+      if (user?.role === 'conductor') {
+        const own = allConductors.find(c => c.id === user.id || c.cedula === user.cedula) || null;
+        setSelectedConductor(own);
+        setCurrentStep('identify');
+      }
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+      alert('Error cargando datos. Por favor, recargue la página.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -61,16 +73,52 @@ const ConductorFlow: React.FC = () => {
   const handleQRScan = (qrData: string) => {
     try {
       const parsedData = parseQRData(qrData);
-      const passenger = passengers.find(p => p.cedula === parsedData.cedula);
+      console.log('Datos QR parseados:', parsedData);
+      
+      if (!parsedData || !parsedData.cedula) {
+        alert('Código QR inválido o sin cédula');
+        setShowScanner(false);
+        return;
+      }
+      
+      // Normalizar la cédula para la búsqueda
+      const normalizedCedula = String(parsedData.cedula).trim();
+      console.log('Cédula normalizada para búsqueda:', normalizedCedula);
+      
+      // Buscar pasajero por cédula normalizada
+      const passenger = passengers.find(p => 
+        String(p.cedula).trim() === normalizedCedula
+      );
+      console.log('Pasajero encontrado:', passenger);
       
       if (!passenger) {
-        alert(`Pasajero con cédula ${parsedData.cedula} no encontrado en el sistema`);
+        // Mostrar más información para depuración
+        console.log('Pasajeros disponibles:', passengers.length);
+        console.log('Primeros 5 pasajeros para referencia:', passengers.slice(0, 5).map(p => ({ id: p.id, cedula: p.cedula, tipo: typeof p.cedula })));
+        alert(`Pasajero con cédula ${normalizedCedula} no encontrado en el sistema`);
         setShowScanner(false);
         return;
       }
 
       setSelectedPassenger(passenger);
-      setCurrentStep('confirm');
+      
+      // Si ya hay un viaje en curso, agregar pasajero directamente
+      if (tripStartTime) {
+        // Capacidad 18 asientos
+        if (tripPassengers.length >= 18) {
+          alert('Capacidad máxima alcanzada (18 pasajeros).');
+          setShowScanner(false);
+          return;
+        }
+        
+        const now = new Date();
+        setTripPassengers(prev => [...prev, { passenger, addedAt: now }]);
+        setCurrentStep('trip');
+      } else {
+        // Si no hay viaje, ir a confirmación
+        setCurrentStep('confirm');
+      }
+      
       setShowScanner(false);
     } catch (error) {
       console.error('Error procesando QR:', error);
@@ -87,17 +135,47 @@ const ConductorFlow: React.FC = () => {
       return;
     }
 
-    const passenger = passengers.find(p => p.cedula === manualCedula.trim());
+    // Normalizar la cédula para la búsqueda
+    const normalizedCedula = manualCedula.trim();
+    console.log('Buscando pasajero con cédula normalizada:', normalizedCedula);
+    console.log('Total de pasajeros en sistema:', passengers.length);
+    
+    // Buscar pasajero por cédula normalizada
+    const passenger = passengers.find(p => 
+      String(p.cedula).trim() === normalizedCedula
+    );
+    console.log('Pasajero encontrado:', passenger);
     
     if (!passenger) {
-      alert(`Pasajero con cédula ${manualCedula.trim()} no encontrado en el sistema`);
+      // Mostrar más información para depuración
+      console.log('Pasajeros disponibles:', passengers.length);
+      console.log('Primeros 5 pasajeros para referencia:', passengers.slice(0, 5).map(p => ({ id: p.id, cedula: p.cedula, tipo: typeof p.cedula })));
+      alert(`Pasajero con cédula ${normalizedCedula} no encontrado en el sistema`);
       setShowManualEntry(false);
       setManualCedula('');
       return;
     }
 
     setSelectedPassenger(passenger);
-    setCurrentStep('confirm');
+    
+    // Si ya hay un viaje en curso, agregar pasajero directamente
+    if (tripStartTime) {
+      // Capacidad 18 asientos
+      if (tripPassengers.length >= 18) {
+        alert('Capacidad máxima alcanzada (18 pasajeros).');
+        setShowManualEntry(false);
+        setManualCedula('');
+        return;
+      }
+      
+      const now = new Date();
+      setTripPassengers(prev => [...prev, { passenger, addedAt: now }]);
+      setCurrentStep('trip');
+    } else {
+      // Si no hay viaje, ir a confirmación
+      setCurrentStep('confirm');
+    }
+    
     setShowManualEntry(false);
     setManualCedula('');
   };
@@ -386,6 +464,18 @@ const ConductorFlow: React.FC = () => {
       </div>
     </div>
   );
+
+  // Mostrar indicador de carga mientras se cargan los datos
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center p-8">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Cargando datos...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
