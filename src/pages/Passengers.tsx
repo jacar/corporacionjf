@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { applySEO } from '../utils/seo';
-import { Plus, Search, QrCode, Download, Edit, Trash2, Upload } from 'lucide-react';
+import { Plus, Search, QrCode, Download, Edit, Trash2, Upload, Database } from 'lucide-react';
 import { Passenger } from '../types';
 import { storage } from '../utils/storage';
 import { generateQRCode, QRData } from '../utils/qr';
@@ -14,6 +14,7 @@ const Passengers: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [showQRViewer, setShowQRViewer] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [selectedPassenger, setSelectedPassenger] = useState<Passenger | null>(null);
   const [editingPassenger, setEditingPassenger] = useState<Passenger | null>(null);
   const [formData, setFormData] = useState({
@@ -36,9 +37,14 @@ const Passengers: React.FC = () => {
     filterPassengers();
   }, [passengers, searchTerm]);
 
-  const loadPassengers = () => {
-    const data = storage.getPassengers();
-    setPassengers(data);
+  const loadPassengers = async () => {
+    try {
+      const data = await storage.getPassengers();
+      setPassengers(data);
+    } catch (error) {
+      console.error('Error al cargar pasajeros:', error);
+      alert('Hubo un problema al cargar los pasajeros. Intente nuevamente.');
+    }
   };
 
   const filterPassengers = () => {
@@ -116,10 +122,11 @@ const Passengers: React.FC = () => {
           : p
       );
       
-      storage.savePassengers(updatedPassengers);
+      await storage.savePassengers(updatedPassengers);
       setPassengers(updatedPassengers);
     } catch (error) {
-      alert('Error regenerando código QR');
+      console.error('Error al regenerar QR:', error);
+      alert('Error regenerando código QR. La aplicación utilizará la base de datos interna.');
     }
   };
 
@@ -170,6 +177,28 @@ const Passengers: React.FC = () => {
     // Mostrar mensaje de error si es necesario
     console.error('Error al importar:', error);
   };
+  
+  // Función para forzar la migración de datos cuando hay problemas de almacenamiento
+  const handleForceMigration = async () => {
+    if (window.confirm('¿Está seguro de migrar los datos a la base de datos interna? Esto puede ayudar a solucionar problemas de almacenamiento.')) {
+      setIsMigrating(true);
+      try {
+        const success = await storage.forceDataMigration();
+        if (success) {
+          alert('Migración completada. Los datos han sido transferidos a la base de datos interna y se ha liberado espacio.');
+          // Recargar los pasajeros después de la migración
+          await loadPassengers();
+        } else {
+          alert('Hubo un problema durante la migración. Intente nuevamente.');
+        }
+      } catch (error) {
+        console.error('Error durante la migración:', error);
+        alert('Error durante la migración. Intente nuevamente.');
+      } finally {
+        setIsMigrating(false);
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -192,6 +221,15 @@ const Passengers: React.FC = () => {
           >
             <Plus className="h-5 w-5" />
             <span>Nuevo Pasajero</span>
+          </button>
+          <button
+            onClick={handleForceMigration}
+            disabled={isMigrating}
+            className="flex items-center space-x-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors disabled:bg-gray-400"
+            title="Migrar datos a la base de datos interna para solucionar problemas de almacenamiento"
+          >
+            <Database className="h-5 w-5" />
+            <span>{isMigrating ? 'Migrando...' : 'Liberar Espacio'}</span>
           </button>
         </div>
       </div>

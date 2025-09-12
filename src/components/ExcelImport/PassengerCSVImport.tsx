@@ -69,7 +69,7 @@ const PassengerCSVImport: React.FC<PassengerCSVImportProps> = ({
       if (errorMsg.includes('almacenamiento está lleno') || 
           errorMsg.includes('quota exceeded') || 
           errorMsg.includes('base de datos')) {
-        errorMsg = 'No hay suficiente espacio de almacenamiento. La aplicación utilizará la base de datos interna para guardar más pasajeros.';
+        errorMsg = 'No hay suficiente espacio de almacenamiento. Utilice el botón "Liberar Espacio" para migrar los datos a la base de datos interna y solucionar este problema.';
       }
       
       setResult({ type: 'error', message: errorMsg });

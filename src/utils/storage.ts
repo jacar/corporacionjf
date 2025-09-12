@@ -44,6 +44,39 @@ const initializeDefaultData = async () => {
 
 initializeDefaultData().catch(console.error);
 
+// Función para forzar la migración de datos de localStorage a IndexedDB
+const forceDataMigration = async () => {
+  try {
+    console.log('Iniciando migración forzada de datos a IndexedDB...');
+    
+    // Migrar pasajeros
+    const passengersData = localStorage.getItem(STORAGE_KEYS.PASSENGERS);
+    if (passengersData) {
+      const passengers = JSON.parse(passengersData);
+      await indexedDBService.savePassengers(passengers);
+      console.log(`Migrados ${passengers.length} pasajeros a IndexedDB`);
+    }
+    
+    // Migrar otros datos importantes
+    const tripsData = localStorage.getItem(STORAGE_KEYS.TRIPS);
+    if (tripsData) {
+      const trips = JSON.parse(tripsData);
+      await indexedDBService.saveTrips(trips);
+      console.log(`Migrados ${trips.length} viajes a IndexedDB`);
+    }
+    
+    // Limpiar localStorage para liberar espacio
+    localStorage.removeItem(STORAGE_KEYS.PASSENGERS);
+    console.log('Datos de pasajeros eliminados de localStorage para liberar espacio');
+    
+    console.log('Migración forzada completada');
+    return true;
+  } catch (error) {
+    console.error('Error durante la migración forzada:', error);
+    return false;
+  }
+};
+
 export const storage = {
   getUsers: (): User[] => {
     // Try IndexedDB first, fallback to localStorage
@@ -69,35 +102,48 @@ export const storage = {
     }
   },
 
-  getPassengers: (): Passenger[] => {
-    // Try IndexedDB first, fallback to localStorage
-    indexedDBService.getPassengers().then(passengers => {
-      if (passengers.length > 0) {
-        // No need to update localStorage as backup since it might exceed quota
+  getPassengers: async (): Promise<Passenger[]> => {
+    try {
+      // Intentar obtener de IndexedDB primero
+      const passengersFromDB = await indexedDBService.getPassengers();
+      if (passengersFromDB.length > 0) {
+        return passengersFromDB;
       }
-    }).catch(error => {
-      console.error('Failed to get passengers from IndexedDB:', error);
-      // Fallback to localStorage if IndexedDB fails
-    });
-    
-    const data = localStorage.getItem(STORAGE_KEYS.PASSENGERS);
-    return data ? JSON.parse(data) : [];
+      
+      // Si no hay datos en IndexedDB, intentar obtener de localStorage
+      const data = localStorage.getItem(STORAGE_KEYS.PASSENGERS);
+      const passengersFromLS = data ? JSON.parse(data) : [];
+      
+      // Si hay datos en localStorage pero no en IndexedDB, migrarlos a IndexedDB
+      if (passengersFromLS.length > 0) {
+        console.log('Migrando pasajeros de localStorage a IndexedDB...');
+        await indexedDBService.savePassengers(passengersFromLS);
+      }
+      
+      return passengersFromLS;
+    } catch (error) {
+      console.error('Error al obtener pasajeros:', error);
+      // Último recurso: intentar obtener de localStorage
+      const data = localStorage.getItem(STORAGE_KEYS.PASSENGERS);
+      return data ? JSON.parse(data) : [];
+    }
   },
   
   savePassengers: async (passengers: Passenger[]) => {
     try {
-      // Try to save to localStorage first (might fail due to quota)
+      // Siempre guardar en IndexedDB primero
+      await indexedDBService.savePassengers(passengers);
+      
+      // Intentar guardar en localStorage solo como respaldo (puede fallar por cuota)
       try {
         localStorage.setItem(STORAGE_KEYS.PASSENGERS, JSON.stringify(passengers));
       } catch (error) {
-        console.warn('Failed to save passengers to localStorage (quota exceeded). Using IndexedDB only.');
+        console.warn('No se pudo guardar en localStorage (cuota excedida). Usando solo IndexedDB.');
+        // Si localStorage está lleno, no es un error crítico, continuamos usando IndexedDB
       }
-      
-      // Always save to IndexedDB
-      await indexedDBService.savePassengers(passengers);
     } catch (error) {
-      console.error('Failed to save passengers:', error);
-      throw new Error('No se pudieron guardar los pasajeros. El almacenamiento está lleno.');
+      console.error('Error al guardar pasajeros:', error);
+      throw new Error('No se pudieron guardar los pasajeros. Hay un problema con la base de datos.');
     }
   },
 
@@ -154,5 +200,10 @@ export const storage = {
     Object.values(STORAGE_KEYS).forEach(key => {
       localStorage.removeItem(key);
     });
+  },
+  
+  // Función para forzar la migración de datos y liberar espacio
+  forceDataMigration: async () => {
+    return await forceDataMigration();
   }
 };
